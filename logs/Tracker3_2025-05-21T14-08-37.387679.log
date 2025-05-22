@@ -1,0 +1,8 @@
+@@TRAX:hello "trax.name=" "trax.family=" "trax.image=path;" "trax.region=rectangle;" "trax.description=" "trax.version=3" "vot=python" "trax.channels=color;" 
+@@TRAX:initialize "file:///Users/ste/Documents/Uni/robotica_vision/vot-workspace/sequences/ball1/color/00000001.jpg" "496.0000,419.0000,40.0000,42.0000" 
+@@TRAX:state "496.0000,419.0000,40.0000,42.0000" 
+@@TRAX:frame "file:///Users/ste/Documents/Uni/robotica_vision/vot-workspace/sequences/ball1/color/00000002.jpg" 
+2025-05-21 14:08:03.399 Python[10325:113554] WARNING: Secure coding is not enabled for restorable state! Enable secure coding by implementing NSApplicationDelegate.applicationSupportsSecureRestorableState: and returning YES.
+@@TRAX:quit 
+
+Process exited with code (-15)

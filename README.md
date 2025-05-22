@@ -14,4 +14,8 @@ Then copy working directory to a new folder tracker_x and add the tracker to the
 
 ## Evaluate
 
-vot evaluate TrackerX
+vot evaluate TrackerX TrackerY
+
+## Render Analysis
+
+vot analysis TrackerX TrackerY
