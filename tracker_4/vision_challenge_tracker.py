@@ -39,10 +39,10 @@ class VCTracker(object):
         
         #Use these lines for testing.
         # Comment them when you evaluate with the vot toolkit
-        im = cv2.rectangle(image, (int(region.x), int(region.y)), (int(region.x+self.size[0]), int(region.y+self.size[1])), (255,0,0), 2)
-        cv2.imshow('result',im)
-        cv2.imshow('template',self.template)
-        cv2.waitKey(0) #change 0 to 1 - remove waiting for key press
+        #im = cv2.rectangle(image, (int(region.x), int(region.y)), (int(region.x+self.size[0]), int(region.y+self.size[1])), (255,0,0), 2)
+        #cv2.imshow('result',im)
+        #cv2.imshow('template',self.template)
+        #cv2.waitKey(1) #change 0 to 1 - remove waiting for key press
 
     def template_to_object(self, point):
         return (int(point[0] + ((self.template_size[0] - self.size[0]) // 2)), int(point[1] + ((self.template_size[1] - self.size[1]) // 2)))
@@ -242,7 +242,7 @@ while True:
     # Comment them when you evaluate with the vot toolkit
 
     
-    im = image.copy()
+    """ im = image.copy()
     for ind in rough_indices:
         im = cv2.rectangle(im,(int(ind[1]),int(ind[0])),(int(ind[1]+template_size[0]),int(ind[0]+template_size[1])), (0,255,0), 2)
 
@@ -255,7 +255,7 @@ while True:
     cv2.imshow('result',im)
     cv2.imshow('template',template)
     if cv2.waitKey(0) & 0xFF == ord('q'):
-      break
+      break """
     
     # *****************************************
     # VOT: Report the position of the object
