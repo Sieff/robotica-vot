@@ -8,7 +8,7 @@ import numpy as np
 import collections
 import math
 
-debug_mode = True
+debug_mode = False
 
 class VCTracker(object):
 
