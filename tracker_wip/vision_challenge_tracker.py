@@ -110,7 +110,7 @@ class VCTracker(object):
     # *******************************************************************
     def track(self, image):
         scales = [1]
-        rotations = [0, -2, 2]
+        rotations = [0, -20, 20]
 
         # Check if travel distance seems reasonable given the previous observations
         if len(self.movement_speed > 0):
