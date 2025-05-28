@@ -8,9 +8,18 @@ import numpy as np
 import collections
 import math
 
+debug_mode = True
+
 class VCTracker(object):
 
     def __init__(self, image, region):
+        # Parameters
+        self.deviation_from_mean_speed = 3
+        self.n_max_sim_values = 20
+        self.current_to_orignal_template_tradeoff = 0.5
+        self.scales = [1]
+        self.rotations = [0]
+
         self.window = max(region.width, region.height) * 2
         #Original Size of the object (width, height)
         self.size = (int(region.width), int(region.height))
@@ -46,16 +55,14 @@ class VCTracker(object):
         self.acceptable_distance = 0
 
 
-        # Parameters
-        self.deviation_from_mean_speed = 3
-        self.n_max_sim_values = 20
         
         #Use these lines for testing.
         # Comment them when you evaluate with the vot toolkit
-        im = cv2.rectangle(image, (int(region.x), int(region.y)), (int(region.x+self.size[0]), int(region.y+self.size[1])), (255,0,0), 2)
-        cv2.imshow('result',im)
-        cv2.imshow('template',self.template)
-        cv2.waitKey(0) #change 0 to 1 - remove waiting for key press
+        if debug_mode:
+            im = cv2.rectangle(image, (int(region.x), int(region.y)), (int(region.x+self.size[0]), int(region.y+self.size[1])), (255,0,0), 2)
+            cv2.imshow('result',im)
+            cv2.imshow('template',self.template)
+            cv2.waitKey(0) #change 0 to 1 - remove waiting for key press
 
     class TrackResult(object):
         def __init__(self, position, template_size, confidence, scale, rotation, distance, is_reasonable_distance, mask=None):
@@ -109,9 +116,6 @@ class VCTracker(object):
     # the width and the height of the bounding box
     # *******************************************************************
     def track(self, image):
-        scales = [1]
-        rotations = [0, -20, 20]
-
         # Check if travel distance seems reasonable given the previous observations
         if len(self.movement_speed > 0):
             self.acceptable_distance = self.skipped_frames * self.deviation_from_mean_speed * np.mean(self.movement_speed)
@@ -119,8 +123,8 @@ class VCTracker(object):
             self.acceptable_distance = 0
 
         results = []
-        for rotation in rotations:
-            for scale in scales:
+        for rotation in self.rotations:
+            for scale in self.scales:
                 results.append(self.execute_track(image, rotation, scale))
 
         track_result, misc = None, None
@@ -209,7 +213,7 @@ class VCTracker(object):
         binary_template = self.transform(self.template_mask, self.rotation + rotation, current_template_size)
 
         
-        template = (0.3 * transformed_template + 0.7 * transformed_original_template).astype('uint8')
+        template = (self.current_to_orignal_template_tradeoff * transformed_template + (1 - self.current_to_orignal_template_tradeoff) * transformed_original_template).astype('uint8')
 
         cv2.imshow('working template', template)
         #cv2.waitKey(0)
@@ -331,11 +335,6 @@ image = cv2.imread(imagefile)
 # Initialize the tracker
 tracker = VCTracker(image, selection)
 
-def get_contour(mask):
-    cv2.imshow('mask', mask)
-    
-    return contours
-
 while True:
     # *****************************************
     # VOT: Call frame method to get path of the
@@ -353,25 +352,26 @@ while True:
     
     #Use these lines for testing.
     # Comment them when you evaluate with the vot toolkit
-    contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
+    if debug_mode:
+        contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
 
-    mask_size = mask.shape[0]
-    
-    im = image.copy()
-    for ind in rough_indices:
-        im = cv2.rectangle(im,(int(ind[1]),int(ind[0])),(int(ind[1]+mask_size),int(ind[0]+mask_size)), (0,255,0), 2)
-
-    for ind in indices:
-        im = cv2.rectangle(im,(int(ind[1]),int(ind[0])),(int(ind[1]+mask_size),int(ind[0]+mask_size)), (0,100,255), 2)
-
-    im = cv2.circle(im,(int(region.x),int(region.y)), int(acceptable_distance) or 0, (0,0,255), 2)
+        mask_size = mask.shape[0]
         
-    im = cv2.rectangle(im,(int(region.x),int(region.y)),(int(region.x+region.width),int(region.y+region.height)), (255,0,0), 2)
-    
-    cv2.imshow('result',im)
-    cv2.imshow('template',template)
-    if cv2.waitKey(0) & 0xFF == ord('q'):
-      break
+        im = image.copy()
+        for ind in rough_indices:
+            im = cv2.rectangle(im,(int(ind[1]),int(ind[0])),(int(ind[1]+mask_size),int(ind[0]+mask_size)), (0,255,0), 2)
+
+        for ind in indices:
+            im = cv2.rectangle(im,(int(ind[1]),int(ind[0])),(int(ind[1]+mask_size),int(ind[0]+mask_size)), (0,100,255), 2)
+
+        im = cv2.circle(im,(int(region.x),int(region.y)), int(acceptable_distance) or 0, (0,0,255), 2)
+            
+        im = cv2.rectangle(im,(int(region.x),int(region.y)),(int(region.x+region.width),int(region.y+region.height)), (255,0,0), 2)
+        
+        cv2.imshow('result',im)
+        cv2.imshow('template',template)
+        if cv2.waitKey(0) & 0xFF == ord('q'):
+            break   
     
     # *****************************************
     # VOT: Report the position of the object
