@@ -8,17 +8,18 @@ import numpy as np
 import collections
 import math
 
-debug_mode = False
+debug_mode = True
 
 class VCTracker(object):
 
     def __init__(self, image, region):
         # Parameters
         self.deviation_from_mean_speed = 3
-        self.n_max_sim_values = 20
-        self.current_to_orignal_template_tradeoff = 0.4
+        self.n_max_sim_values = 30
+        self.current_to_orignal_template_tradeoff = 0.5
         self.scales = [1]
-        self.rotations = [0, -1, 1]
+        self.rotations = [-10, -5, 0, 5, 10]
+        self.speed_decay = 0.9
 
         self.window = max(region.width, region.height) * 2
         #Original Size of the object (width, height)
@@ -97,16 +98,14 @@ class VCTracker(object):
     def object_to_template(self, point):
         return (int(point[0] - ((self.template_size - self.size[0]) // 2)), int(point[1] - ((self.template_size - self.size[1]) // 2)))
     
-    def set_template(self, template, mask=None):
-        self.template = template.copy()
-
-        if mask is None:
-            self.template[:, 0:(self.template_size - self.size[0]) // 2,:] = 0
-            self.template[:, (self.template_size - self.size[0]) // 2 + self.size[0]:,:] = 0
-            self.template[0:(self.template_size - self.size[1]) // 2,:,:] = 0
-            self.template[(self.template_size - self.size[1]) // 2 + self.size[1]:,:,:] = 0
+    def set_template(self, patch, mask=None):
+        if patch.shape[0] == 0 or patch.shape[1] == 0:
+            return
+        self.template = patch.copy()
+        if mask is not None:
+            self.template_mask = mask.copy()
         else:
-            self.template = cv2.bitwise_and(self.template, self.template, mask = mask)
+            self.template_mask = np.ones((patch.shape[0], patch.shape[1]), dtype=np.uint8) * 255
 
 
     # *******************************************************************
@@ -116,76 +115,40 @@ class VCTracker(object):
     # the width and the height of the bounding box
     # *******************************************************************
     def track(self, image):
-        # Check if travel distance seems reasonable given the previous observations
-        if len(self.movement_speed > 0):
-            self.acceptable_distance = self.skipped_frames * self.deviation_from_mean_speed * np.mean(self.movement_speed)
-        else:
-            self.acceptable_distance = 0
-
+        image_gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         results = []
+
         for rotation in self.rotations:
             for scale in self.scales:
-                results.append(self.execute_track(image, rotation, scale))
+                results.append(self.execute_track(image_gray, rotation, scale))
 
-        track_result, misc = None, None
-        indices = []
-        rough_indices = []
-        for (t_result, m) in results:
-            indices += m[1]
-            rough_indices += m[3]
-            if (t_result.is_reasonable_distance and # If distance is reasonable and
-                ((track_result is None) or # If not assigned yet or
-                (track_result is not None and t_result.confidence > track_result.confidence))): # If confidence is larger 
-                track_result = t_result
-                misc = m
+        # Select the best candidate based on confidence & reasonable distance
+        best_result = None
+        for result, _ in results:
+            if result.is_reasonable_distance and (best_result is None or result.confidence > best_result.confidence):
+                best_result = result
 
-        if track_result is not None:
-            print(track_result.is_reasonable_distance, self.acceptable_distance, track_result.distance)
-
-        if track_result is not None:
-            new_pos = track_result.position
-            confidence = track_result.confidence
-
-            self.movement_speed = np.append(self.movement_speed, track_result.distance)
-            self.last_move = np.array(new_pos) - np.array(self.pos)
-            self.skipped_frames = 1
-
-            self.rotation += track_result.rotation
-            self.scale *= track_result.scale
-
-        else:
-            new_pos = (self.current_report.rect.x + self.last_move[0], self.current_report.rect.y + self.last_move[1])
-            self.skipped_frames += 1
-            confidence = self.current_report.confidence
-        
-        
-        left,top = new_pos
-        self.pos = new_pos
-
-        
-
-        if track_result is not None:
-            right = left + track_result.template_size
-            bottom = top + track_result.template_size
-
-            self.set_template(cv2.blur(image[int(top):int(bottom), int(left):int(right)], (3, 3), cv2.BORDER_DEFAULT), track_result.mask)
-
-	
-            # Report region based on binary mask bounding box
-            coords = cv2.findNonZero(track_result.mask)
+        if best_result:
+            # Update position, speed, and template
+            self.last_move = np.array(best_result.position) - np.array(self.pos)
+            self.pos = best_result.position
+            self.movement_speed = self.speed_decay * self.movement_speed + (1 - self.speed_decay) * best_result.distance
+            self.scale *= best_result.scale
+            self.rotation += best_result.rotation
+            self.set_template(image[int(self.pos[1]):int(self.pos[1] + best_result.template_size),
+                                    int(self.pos[0]):int(self.pos[0] + best_result.template_size)],
+                            best_result.mask)
+            x, y = map(int, self.pos)
+            coords = cv2.findNonZero(best_result.mask)
             left, top, width, height = cv2.boundingRect(coords)
-            left = left + new_pos[0]
-            top = top + new_pos[1]
-
-            self.current_report = self.TrackReport(vot.Rectangle(left, top, width, height), confidence, misc)
+            self.previous_result = best_result
+            return vot.Rectangle(x + left, y + top, width, height), best_result.confidence, None, (self.acceptable_distance, [], [])
 
         else:
-            left, top = new_pos
-            width, height = self.current_report.rect.width, self.current_report.rect.height
-            self.current_report = self.TrackReport(vot.Rectangle(left, top, width, height), self.current_report.confidence, self.current_report.misc)
+            # Fallback: predict based on last motion
+            self.pos = (self.pos[0] + self.last_move[0], self.pos[1] + self.last_move[1])
+            return vot.Rectangle(self.pos[0], self.pos[1], self.size[0], self.size[1]), 0.5, None, (self.acceptable_distance, [], [])
 
-        return self.current_report.rect, self.current_report.confidence, self.current_report.misc, (self.acceptable_distance, indices, rough_indices)
-    
     
 
     def transform(self, image, rotation, size):
@@ -196,57 +159,23 @@ class VCTracker(object):
         result = cv2.warpAffine(image, rot_mat, image.shape[1::-1], flags=cv2.INTER_LINEAR)
         return result
 
-    def execute_track(self, image, rotation, scale):
-        # Fill here the function
-        # You have the information in self.template, self.position and self.size
-        # You can update them and add other variables
+    def execute_track(self, image_gray, rotation, scale):
+        current_size = int(self.template_size * self.scale * scale)
+        t_gray = cv2.cvtColor(self.template, cv2.COLOR_BGR2GRAY)
+        t_resized = self.transform(t_gray, rotation + self.rotation, current_size)
+        mask_resized = self.transform(self.template_mask, rotation + self.rotation, current_size)
 
-        # Use binary template to set template at the end for new template shape
+        sim_map = cv2.matchTemplate(image_gray, t_resized, cv2.TM_CCOEFF_NORMED, mask=mask_resized)
+        sim_map = np.nan_to_num(sim_map)
 
+        max_loc = cv2.minMaxLoc(sim_map)[3]
+        confidence = sim_map[max_loc[1], max_loc[0]]
+        position = (max_loc[0], max_loc[1])
+        distance = np.linalg.norm(np.array(position) - np.array(self.pos))
+        is_reasonable = self.acceptable_distance == 0 or distance < self.acceptable_distance
 
-        # Logic
-        # Save original template for comparing/averaging
+        return self.TrackResult(position, current_size, confidence, scale, rotation, distance, is_reasonable, mask_resized), None
 
-        current_template_size = int(self.template_size * self.scale * scale)
-        transformed_template = self.transform(self.template, rotation, current_template_size)
-        transformed_original_template = self.transform(self.original_template, rotation + self.rotation, current_template_size)
-        binary_template = self.transform(self.template_mask, self.rotation + rotation, current_template_size)
-
-        
-        template = (self.current_to_orignal_template_tradeoff * transformed_template + (1 - self.current_to_orignal_template_tradeoff) * transformed_original_template).astype('uint8')
-
-        if debug_mode:
-            cv2.imshow('working template', template)
-            #cv2.waitKey(0)
-
-
-        #cv2.imshow('bin', binary_template)
-        #cv2.waitKey(0)
-
-        blur_image = cv2.blur(image, (3, 3), cv2.BORDER_DEFAULT)
-        #gray_image = cv2.cvtColor(blur_image, cv2.COLOR_BGR2GRAY)
-
-        sim_map = cv2.matchTemplate(blur_image, template, cv2.TM_CCOEFF_NORMED, mask=binary_template)
-        sim_map = np.nan_to_num(sim_map, nan=0.0)
-
-        #cv2.imshow('simmap', sim_map)
-        #cv2.waitKey(0)
-
-        # Get top n similarity indices
-        rough_indices, values = self.get_max_indices(sim_map, self.n_max_sim_values)
-
-        # Group indices and get a representative for each
-        indices, values = self.group_indices(rough_indices, values, self.template_size)
-
-        # Get closest to last frame
-        closest, distance, confidence = self.get_closest_indices(indices, values, self.pos)
-        
-        # Check if travel distance seems reasonable given the previous observations
-        is_reasonable_distance = self.acceptable_distance == 0 or distance < self.acceptable_distance
-
-        return self.TrackResult(closest, current_template_size, confidence, scale, rotation, distance, is_reasonable_distance, binary_template), (binary_template, indices, self.template, rough_indices, self.acceptable_distance, self.size, self.template_size)
-    
-    
 
     
     def group_indices(self, indices, values, radius):
@@ -348,29 +277,29 @@ while True:
     image = cv2.imread(imagefile)
     
     # Track the object in the image  
-    region, confidence, (mask, _, template, _, _, _, _), (acceptable_distance, indices, rough_indices) = tracker.track(image)
+    region, confidence, _, (acceptable_distance, indices, rough_indices) = tracker.track(image)
 
     
     #Use these lines for testing.
     # Comment them when you evaluate with the vot toolkit
     if debug_mode:
-        contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
+        #contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
 
-        mask_size = mask.shape[0]
+        #mask_size = mask.shape[0]
         
         im = image.copy()
         for ind in rough_indices:
-            im = cv2.rectangle(im,(int(ind[1]),int(ind[0])),(int(ind[1]+mask_size),int(ind[0]+mask_size)), (0,255,0), 2)
+            im = cv2.rectangle(im,(int(ind[1]),int(ind[0])),(int(ind[1]+region.width),int(ind[0]+region.height)), (0,255,0), 2)
 
         for ind in indices:
-            im = cv2.rectangle(im,(int(ind[1]),int(ind[0])),(int(ind[1]+mask_size),int(ind[0]+mask_size)), (0,100,255), 2)
+            im = cv2.rectangle(im,(int(ind[1]),int(ind[0])),(int(ind[1]+region.width),int(ind[0]+region.height)), (0,100,255), 2)
 
         im = cv2.circle(im,(int(region.x),int(region.y)), int(acceptable_distance) or 0, (0,0,255), 2)
             
         im = cv2.rectangle(im,(int(region.x),int(region.y)),(int(region.x+region.width),int(region.y+region.height)), (255,0,0), 2)
         
         cv2.imshow('result',im)
-        cv2.imshow('template',template)
+        #cv2.imshow('template',template)
         if cv2.waitKey(0) & 0xFF == ord('q'):
             break   
     

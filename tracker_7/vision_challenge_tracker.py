@@ -8,15 +8,15 @@ import numpy as np
 import collections
 import math
 
-debug_mode = False
+debug_mode = True
 
 class VCTracker(object):
 
     def __init__(self, image, region):
         # Parameters
         self.deviation_from_mean_speed = 3
-        self.n_max_sim_values = 20
-        self.current_to_orignal_template_tradeoff = 0.4
+        self.n_max_sim_values = 30
+        self.current_to_orignal_template_tradeoff = 0.5
         self.scales = [1]
         self.rotations = [0, -1, 1]
 

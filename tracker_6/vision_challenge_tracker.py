@@ -15,10 +15,10 @@ class VCTracker(object):
     def __init__(self, image, region):
         # Parameters
         self.deviation_from_mean_speed = 3
-        self.n_max_sim_values = 20
-        self.current_to_orignal_template_tradeoff = 0.4
+        self.n_max_sim_values = 30
+        self.current_to_orignal_template_tradeoff = 0.5
         self.scales = [1]
-        self.rotations = [0, -1, 1]
+        self.rotations = [0]
 
         self.window = max(region.width, region.height) * 2
         #Original Size of the object (width, height)
