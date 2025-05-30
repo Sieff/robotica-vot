@@ -21,7 +21,7 @@ List of ideas:
 ###################################################################
 
 # Set to True to show images and progress manually
-debug_mode = True
+debug_mode = False
 
 class VCTracker(object):
 
